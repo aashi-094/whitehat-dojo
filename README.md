@@ -48,15 +48,16 @@ To run the production app as one service, build first and start the compiled ser
 
 ## Public deployment (GitHub + Render)
 
-The repository includes a Render Blueprint in `render.yaml` for deploying the full-stack app on one origin. The Express server serves the production React build and `/api`, while SQLite lives on a persistent Render disk. This configuration uses a paid Render Starter service and a 1 GB persistent disk; Render pricing can change.
+The repository includes a Render Blueprint in `render.yaml` for deploying the full-stack app on one origin. The Express server serves the production React build and `/api`; the free demo stores SQLite in temporary instance storage. Render free web services may sleep when idle and their local data is not persistent, so accounts and progress can be lost after a restart, sleep, or redeploy. For persistent production data, use a paid Render service with a persistent disk or migrate to a managed database.
 
 1. Create a **public** GitHub repository and push this project to its default branch. Do not commit `.env` files, database files, passwords, or signing secrets.
 2. In Render, choose **New + → Blueprint**, connect the GitHub repository, and apply the `render.yaml` configuration.
+   The build command installs development dependencies explicitly because the TypeScript compiler and type declarations are required to build the server.
 3. The configured public URL is `https://whitehat-dojo-live.onrender.com`. If that Render service name is unavailable, change `name` and the matching `CLIENT_ORIGIN` value in `render.yaml` to an available name before deploying.
 4. Render generates `JWT_SECRET` and `ADMIN_PASSWORD`. After the initial deploy, view the generated `ADMIN_PASSWORD` in the Render service's environment settings and sign in as username `admin`; change the password immediately. Production seed output deliberately does not print credentials.
 5. Wait for `/api/health` to pass, then open the service URL. Subsequent pushes to the connected branch deploy automatically.
 
-The persistent disk keeps accounts and progress across service restarts and deployments. The included Blueprint is for a single server instance; do not scale this SQLite deployment horizontally.
+The free demo Blueprint is for a single server instance; do not scale this SQLite deployment horizontally.
 
 ## Environment
 

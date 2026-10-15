@@ -2,16 +2,12 @@ services:
   - type: web
     name: whitehat-dojo-live
     runtime: node
-    plan: starter
+    plan: free
     region: oregon
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm run seed -w server && npm run start -w server
     healthCheckPath: /api/health
     autoDeploy: true
-    disk:
-      name: dojo-sqlite
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -20,7 +16,7 @@ services:
       - key: CLIENT_ORIGIN
         value: https://whitehat-dojo-live.onrender.com
       - key: DATABASE_PATH
-        value: /var/data/whitehat-dojo.sqlite
+        value: /tmp/whitehat-dojo.sqlite
       - key: JWT_SECRET
         generateValue: true
       - key: ADMIN_PASSWORD
