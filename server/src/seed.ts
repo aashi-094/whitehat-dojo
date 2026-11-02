@@ -116,7 +116,7 @@ const seed = db.transaction(() => {
     hints.forEach((hint,position)=>db.prepare("INSERT INTO lab_hints(lab_id,body,position) SELECT ?,?,? WHERE NOT EXISTS (SELECT 1 FROM lab_hints WHERE lab_id=? AND position=?)").run(id.id,hint,position+1,id.id,position+1));
   }
   const email = process.env.ADMIN_EMAIL ?? "admin@whitehatdojo.local";
-  const password = process.env.ADMIN_PASSWORD ?? "ChangeMe123!";
+  const password = process.env.NODE_ENV === "production" ? "ChangeMe123!" : (process.env.ADMIN_PASSWORD ?? "ChangeMe123!");
   const passwordHash = bcrypt.hashSync(password,12);
   const existingAdmin = db.prepare("SELECT id FROM users WHERE username='admin'").get() as {id:number}|undefined;
   if (!existingAdmin) {
