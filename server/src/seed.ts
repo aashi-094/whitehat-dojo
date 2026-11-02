@@ -123,9 +123,7 @@ const seed = db.transaction(() => {
     db.prepare("INSERT INTO users(username,email,password_hash,role) VALUES(?,?,?,'admin')").run("admin",email,passwordHash);
     return true;
   }
-  if (process.env.NODE_ENV === "production") {
-    db.prepare("UPDATE users SET email=?, password_hash=? WHERE id=? AND role='admin'").run(email,passwordHash,existingAdmin.id);
-  }
+  db.prepare("UPDATE users SET email=?, password_hash=? WHERE id=? AND role='admin'").run(email,passwordHash,existingAdmin.id);
   return false;
 });
 const adminCreated=seed();
