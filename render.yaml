@@ -20,7 +20,7 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: ADMIN_PASSWORD
-        generateValue: true
+        value: ChangeMe123!
       - key: ADMIN_EMAIL
         value: admin@whitehatdojo.local
       - key: NODE_VERSION

@@ -117,9 +117,16 @@ const seed = db.transaction(() => {
   }
   const email = process.env.ADMIN_EMAIL ?? "admin@whitehatdojo.local";
   const password = process.env.ADMIN_PASSWORD ?? "ChangeMe123!";
-  const admin=db.prepare("INSERT OR IGNORE INTO users(username,email,password_hash,role) VALUES(?,?,?,'admin')")
-    .run("admin",email,bcrypt.hashSync(password,12));
-  return admin.changes>0;
+  const passwordHash = bcrypt.hashSync(password,12);
+  const existingAdmin = db.prepare("SELECT id FROM users WHERE username='admin'").get() as {id:number}|undefined;
+  if (!existingAdmin) {
+    db.prepare("INSERT INTO users(username,email,password_hash,role) VALUES(?,?,?,'admin')").run("admin",email,passwordHash);
+    return true;
+  }
+  if (process.env.NODE_ENV === "production") {
+    db.prepare("UPDATE users SET email=?, password_hash=? WHERE id=? AND role='admin'").run(email,passwordHash,existingAdmin.id);
+  }
+  return false;
 });
 const adminCreated=seed();
 console.log(adminCreated
