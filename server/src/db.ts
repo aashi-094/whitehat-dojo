@@ -71,6 +71,12 @@ CREATE TABLE IF NOT EXISTS activity_log (
  id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  action TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS certificates (
+ id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ track TEXT NOT NULL, certificate_code TEXT NOT NULL UNIQUE,
+ issued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(user_id, track)
+);
 CREATE INDEX IF NOT EXISTS idx_lessons_track_position ON lessons(track, position);
 CREATE INDEX IF NOT EXISTS idx_questions_lesson ON quiz_questions(lesson_id);
 CREATE INDEX IF NOT EXISTS idx_solves_user ON lab_solves(user_id);

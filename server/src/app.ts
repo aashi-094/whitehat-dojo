@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -40,6 +41,21 @@ const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   } catch { return fail(res,401,"Session expired or invalid","UNAUTHORIZED"); }
 };
 const requireAdmin = (req: Request,res: Response,next: NextFunction) => req.user?.role === "admin" ? next() : fail(res,403,"Administrator access required","FORBIDDEN");
+function issueCompletedTrackCertificates(userId:number) {
+  const completedTracks = db.prepare(`SELECT l.track FROM lessons l
+    LEFT JOIN lesson_progress p ON p.lesson_id=l.id AND p.user_id=?
+    WHERE l.disabled=0 GROUP BY l.track
+    HAVING COUNT(l.id)>0 AND COUNT(p.lesson_id)=COUNT(l.id)`).all(userId) as Array<{track:string}>;
+  for (const {track} of completedTracks) {
+    const exists=db.prepare("SELECT 1 FROM certificates WHERE user_id=? AND track=?").get(userId,track);
+    if (exists) continue;
+    let code="";
+    do { code=`WD-${randomBytes(5).toString("hex").toUpperCase()}`; }
+    while (db.prepare("SELECT 1 FROM certificates WHERE certificate_code=?").get(code));
+    db.prepare("INSERT INTO certificates(user_id,track,certificate_code) VALUES(?,?,?)").run(userId,track,code);
+    db.prepare("INSERT INTO activity_log(user_id,action,detail) VALUES(?,?,?)").run(userId,"certificate","Certificate issued for "+track);
+  }
+}
 const publicUser = (u: User) => ({id:u.id,username:u.username,email:u.email,role:u.role,xp:u.xp,level:levelForXp(u.xp),streak:u.streak});
 function awardXp(userId:number, amount:number, action:string, detail:string) {
   const user = db.prepare("SELECT xp,last_active,streak FROM users WHERE id=?").get(userId) as {xp:number;last_active:string|null;streak:number};
@@ -221,10 +237,17 @@ app.get("/api/leaderboard",requireAuth,(_req,res)=>{
   res.json({users:rows.map((u,i)=>({...u,rank:i+1,level:levelForXp((u as {xp:number}).xp)}))});
 });
 app.get("/api/profile",requireAuth,(req,res)=>{
+  issueCompletedTrackCertificates(req.user!.id);
   const badges=db.prepare("SELECT badge_key,earned_at FROM badges_earned WHERE user_id=? ORDER BY earned_at DESC").all(req.user!.id);
   const activity=db.prepare("SELECT action,detail,created_at FROM activity_log WHERE user_id=? ORDER BY created_at DESC LIMIT 12").all(req.user!.id);
-  const tracks=db.prepare(`SELECT track,COUNT(*) total,SUM(CASE WHEN p.user_id=? THEN 1 ELSE 0 END) completed FROM lessons l LEFT JOIN lesson_progress p ON p.lesson_id=l.id GROUP BY track`).all(req.user!.id);
-  res.json({user:publicUser(req.user!),badges,activity,tracks});
+  const tracks=db.prepare(`SELECT track,COUNT(*) total,SUM(CASE WHEN p.user_id=? THEN 1 ELSE 0 END) completed FROM lessons l LEFT JOIN lesson_progress p ON p.lesson_id=l.id WHERE l.disabled=0 GROUP BY track`).all(req.user!.id);
+  const certificates=db.prepare("SELECT track,certificate_code,issued_at FROM certificates WHERE user_id=? ORDER BY issued_at DESC").all(req.user!.id);
+  res.json({user:publicUser(req.user!),badges,activity,tracks,certificates});
+});
+app.get("/api/certificates/verify/:code",(req,res)=>{
+  const certificate=db.prepare(`SELECT c.track,c.certificate_code,c.issued_at,u.username FROM certificates c JOIN users u ON u.id=c.user_id WHERE c.certificate_code=?`).get(req.params.code) as {track:string;certificate_code:string;issued_at:string;username:string}|undefined;
+  if(!certificate)return fail(res,404,"Certificate not found or revoked","CERTIFICATE_NOT_FOUND");
+  res.json({valid:true,certificate});
 });
 app.post("/api/profile/tool-used",requireAuth,(req,res)=>{
   db.prepare("INSERT OR IGNORE INTO badges_earned(user_id,badge_key) VALUES(?,'toolsmith')").run(req.user!.id);
