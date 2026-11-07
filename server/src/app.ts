@@ -26,7 +26,8 @@ app.use(helmet({
     frameSrc:["'self'","https://accounts.google.com","https://accounts.googleusercontent.com"],
     connectSrc:["'self'","https://accounts.google.com","https://oauth2.googleapis.com"],
     imgSrc:["'self'","data:","https:"],
-    styleSrc:["'self'","'unsafe-inline'"],
+    styleSrc:["'self'","'unsafe-inline'","https://accounts.google.com"],
+    styleSrcElem:["'self'","'unsafe-inline'","https://accounts.google.com"],
   }}
 }));
 app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173", credentials: true }));
