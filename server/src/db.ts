@@ -7,10 +7,18 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 export const db = new Database(dbPath);
 db.pragma("foreign_keys = ON");
 db.pragma("journal_mode = WAL");
+const userTableExists=!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'").get();
+if(userTableExists){
+  const hasGoogleSub=(db.prepare("PRAGMA table_info(users)").all() as Array<{name:string}>).some(column=>column.name==="google_sub");
+  if(!hasGoogleSub){
+    db.exec("ALTER TABLE users ADD COLUMN google_sub TEXT");
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL");
+  }
+}
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
  id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, email TEXT NOT NULL UNIQUE,
- password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')),
+ password_hash TEXT NOT NULL, google_sub TEXT UNIQUE, role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')),
  xp INTEGER NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0, last_active TEXT,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, disabled INTEGER NOT NULL DEFAULT 0
 );
@@ -77,6 +85,14 @@ CREATE TABLE IF NOT EXISTS certificates (
  issued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
  UNIQUE(user_id, track)
 );
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+ id INTEGER PRIMARY KEY,
+ user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ token_hash TEXT NOT NULL UNIQUE,
+ expires_at INTEGER NOT NULL,
+ used_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_lessons_track_position ON lessons(track, position);
 CREATE INDEX IF NOT EXISTS idx_questions_lesson ON quiz_questions(lesson_id);
 CREATE INDEX IF NOT EXISTS idx_solves_user ON lab_solves(user_id);

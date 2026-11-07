@@ -3,7 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import helmet from "helmet";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -11,19 +11,30 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
+import { OAuth2Client } from "google-auth-library";
 import { db } from "./db.js";
 import { fakeSqlLogin, hashFlag, hintAdjustedPoints, levelForXp, verifyFlag } from "./domain.js";
 
 const app = express();
 const secret = process.env.JWT_SECRET ?? "development-only-change-this-secret-to-a-long-random-value";
 const cookieName = "dojo_session";
-app.use(helmet());
+app.use(helmet({
+  crossOriginOpenerPolicy: {policy:"same-origin-allow-popups"},
+  contentSecurityPolicy:{directives:{
+    defaultSrc:["'self'"],
+    scriptSrc:["'self'","https://accounts.google.com","https://apis.google.com"],
+    frameSrc:["'self'","https://accounts.google.com","https://accounts.googleusercontent.com"],
+    connectSrc:["'self'","https://accounts.google.com","https://oauth2.googleapis.com"],
+    imgSrc:["'self'","data:","https:"],
+    styleSrc:["'self'","'unsafe-inline'"],
+  }}
+}));
 app.use(cors({ origin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173", credentials: true }));
 app.use(express.json({ limit: "32kb" }));
 app.use(cookieParser());
 app.use("/api/auth", rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false }));
 
-type User = { id: number; username: string; email: string; role: "user"|"admin"; xp: number; streak: number; last_active: string|null; disabled?: number };
+type User = { id: number; username: string; email: string; google_sub?: string|null; role: "user"|"admin"; xp: number; streak: number; last_active: string|null; disabled?: number };
 declare global { namespace Express { interface Request { user?: User } } }
 const asyncRoute = (handler: (req: Request, res: Response, next: NextFunction) => unknown) =>
   (req: Request, res: Response, next: NextFunction) => Promise.resolve(handler(req,res,next)).catch(next);
@@ -94,6 +105,33 @@ app.post("/api/auth/signup",asyncRoute(async(req,res)=>{
     return res.status(201).json({user:publicUser(db.prepare("SELECT id,username,email,role,xp,streak FROM users WHERE id=?").get(id) as User)});
   } catch(error) { if((error as {code?:string}).code==="SQLITE_CONSTRAINT_UNIQUE") return fail(res,409,"Username or email is already registered","CONFLICT"); throw error; }
 }));
+app.post("/api/auth/google",asyncRoute(async(req,res)=>{
+  const schema=z.object({credential:z.string().min(1),pledge:z.boolean()});
+  const parsed=schema.safeParse(req.body);
+  if(!parsed.success) return fail(res,400,"Invalid Google sign-in request","VALIDATION_ERROR");
+  const clientId=process.env.GOOGLE_CLIENT_ID;
+  if(!clientId) return fail(res,503,"Google sign-in is not configured","PROVIDER_NOT_CONFIGURED");
+  const ticket=await new OAuth2Client(clientId).verifyIdToken({idToken:parsed.data.credential,audience:clientId});
+  const payload=ticket.getPayload();
+  if(!payload?.sub||!payload.email||payload.email_verified!==true) return fail(res,401,"Google account could not be verified","INVALID_GOOGLE_TOKEN");
+  let u=db.prepare("SELECT * FROM users WHERE google_sub=? OR email=? COLLATE NOCASE").get(payload.sub,payload.email) as (User&{password_hash:string})|undefined;
+  if(!u){
+    if(!parsed.data.pledge) return fail(res,400,"Accept the ethical testing pledge to continue","PLEDGE_REQUIRED");
+    const base=(payload.email.split("@")[0].replace(/[^a-zA-Z0-9_]/g,"_").slice(0,18)||"learner")||"learner";
+    let username=base;
+    let suffix=0;
+    while(db.prepare("SELECT 1 FROM users WHERE username=? COLLATE NOCASE").get(username)) username=`${base}${++suffix}`;
+    const result=db.prepare("INSERT INTO users(username,email,password_hash,google_sub,role) VALUES(?,?,?,?, 'user')")
+      .run(username,payload.email,bcrypt.hashSync(randomBytes(32).toString("hex"),12),payload.sub);
+    u=db.prepare("SELECT * FROM users WHERE id=?").get(Number(result.lastInsertRowid)) as User&{password_hash:string};
+    db.prepare("INSERT INTO activity_log(user_id,action,detail) VALUES(?,?,?)").run(u.id,"account_created","Joined Whitehat Dojo with Google");
+  }else if(!u.google_sub){
+    db.prepare("UPDATE users SET google_sub=? WHERE id=?").run(payload.sub,u.id);
+  }
+  if(u.disabled) return fail(res,403,"This account has been disabled","ACCOUNT_DISABLED");
+  res.cookie(cookieName,jwt.sign({id:u.id},secret,{expiresIn:"7d"}),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:7*86400000});
+  return res.json({user:publicUser(u)});
+}));
 app.post("/api/auth/login",asyncRoute(async(req,res)=>{
   const schema=z.object({identity:z.string().trim().min(1).max(254),password:z.string().min(1).max(128)});
   const parsed=schema.safeParse(req.body);
@@ -106,6 +144,31 @@ app.post("/api/auth/login",asyncRoute(async(req,res)=>{
   if(usesProductionAdminRecovery&&!passwordMatches) db.prepare("UPDATE users SET password_hash=? WHERE id=?").run(bcrypt.hashSync(parsed.data.password,12),u.id);
   res.cookie(cookieName,jwt.sign({id:u.id},secret,{expiresIn:"7d"}),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:7*86400000});
   return res.json({user:publicUser(u)});
+}));
+app.post("/api/auth/forgot",asyncRoute(async(req,res)=>{
+  const parsed=z.object({email:z.string().trim().email().max(254)}).safeParse(req.body);
+  if(!parsed.success) return fail(res,400,"Enter a valid email address","VALIDATION_ERROR");
+  const user=db.prepare("SELECT id FROM users WHERE email=? COLLATE NOCASE AND disabled=0").get(parsed.data.email.toLowerCase()) as {id:number}|undefined;
+  if(user){
+    db.prepare("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL").run(Date.now(),user.id);
+    const token=randomBytes(32).toString("hex");
+    const tokenHash=createHash("sha256").update(token).digest("hex");
+    db.prepare("INSERT INTO password_reset_tokens(user_id,token_hash,expires_at) VALUES(?,?,?)").run(user.id,tokenHash,Date.now()+60*60*1000);
+    if(process.env.NODE_ENV!=="production") console.log(`[password reset] http://localhost:5173/reset/${token}`);
+    return res.json({ok:true,resetToken:process.env.NODE_ENV!=="production"?token:undefined});
+  }
+  return res.json({ok:true});
+}));
+app.post("/api/auth/reset",asyncRoute(async(req,res)=>{
+  const parsed=z.object({token:z.string().length(64),password:z.string().min(10).max(128)}).safeParse(req.body);
+  if(!parsed.success) return fail(res,400,"The reset link is invalid or the password is too short","VALIDATION_ERROR");
+  const tokenHash=createHash("sha256").update(parsed.data.token).digest("hex");
+  const reset=db.prepare("SELECT user_id,expires_at,used_at FROM password_reset_tokens WHERE token_hash=?").get(tokenHash) as {user_id:number;expires_at:number;used_at:number|null}|undefined;
+  if(!reset||reset.used_at!==null||reset.expires_at<Date.now()) return fail(res,400,"This password reset link is invalid or has expired","RESET_LINK_INVALID");
+  db.prepare("UPDATE users SET password_hash=? WHERE id=?").run(await bcrypt.hash(parsed.data.password,12),reset.user_id);
+  db.prepare("UPDATE password_reset_tokens SET used_at=? WHERE token_hash=?").run(Date.now(),tokenHash);
+  db.prepare("UPDATE password_reset_tokens SET used_at=? WHERE user_id=? AND used_at IS NULL").run(Date.now(),reset.user_id);
+  return res.json({ok:true,message:"Password updated successfully"});
 }));
 app.post("/api/auth/logout",(_req,res)=>res.clearCookie(cookieName,{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production"}).json({ok:true}));
 app.get("/api/auth/me",requireAuth,(req,res)=>res.json({user:publicUser(req.user!)}));
