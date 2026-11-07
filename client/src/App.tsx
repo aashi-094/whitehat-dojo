@@ -82,7 +82,7 @@ function ResetPassword(){
 }
 function AuthPage({initialMode="login",onAuth}:{initialMode?:"login"|"signup";onAuth:(u:User)=>void}){
  const [mode,setMode]=useState<"login"|"signup">(initialMode),[error,setError]=useState(""),[busy,setBusy]=useState(false),[googlePledge,setGooglePledge]=useState(false);
- const googleClientId=(import.meta.env.VITE_GOOGLE_CLIENT_ID as string|undefined) || "58916445909-8fqlsa3j6fjg92t91i7uh24v8d26ab6a.apps.googleusercontent.com";
+ const googleClientId=(import.meta.env.VITE_GOOGLE_CLIENT_ID as string|undefined) || "58916445909-kv3vsqjnp4el5r8h4elr21qga7delp3v.apps.googleusercontent.com";
  async function googleSignIn(credential:string){setError("");setBusy(true);try{const data=await post<{user:User}>("/auth/google",{credential,pledge:googlePledge});onAuth(data.user);}catch(err){setError((err as Error).message);}finally{setBusy(false)}}
  useEffect(()=>{
   if(!googleClientId) return;
