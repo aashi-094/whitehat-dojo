@@ -81,33 +81,12 @@ function ResetPassword(){
  return <div className="auth-screen"><div className="auth-form-side"><div className="auth-form-wrap"><span className="form-kicker">ACCOUNT RECOVERY</span><h2>Choose a new password</h2>{done?<><div className="success-box">Password updated successfully.</div><Link className="btn btn-primary full" to="/login">Sign in</Link></>:<><form className="stack-form" onSubmit={submit}><label>New password<input type="password" name="password" minLength={10} required autoComplete="new-password"/></label><label>Confirm password<input type="password" name="confirm" minLength={10} required autoComplete="new-password"/></label>{error&&<ErrorBox error={error}/>}<button className="btn btn-primary full" disabled={busy}>{busy?"Updating…":"Update password"}</button></form></>}</div></div></div>
 }
 function AuthPage({initialMode="login",onAuth}:{initialMode?:"login"|"signup";onAuth:(u:User)=>void}){
- const [mode,setMode]=useState<"login"|"signup">(initialMode),[error,setError]=useState(""),[busy,setBusy]=useState(false),[googlePledge,setGooglePledge]=useState(false);
- const googleClientId=(import.meta.env.VITE_GOOGLE_CLIENT_ID as string|undefined) || "58916445909-kv3vsqjnp4el5r8h4elr21qga7delp3v.apps.googleusercontent.com";
- async function googleSignIn(credential:string){setError("");setBusy(true);try{const data=await post<{user:User}>("/auth/google",{credential,pledge:googlePledge});onAuth(data.user);}catch(err){setError((err as Error).message);}finally{setBusy(false)}}
- useEffect(()=>{
-  if(!googleClientId) return;
-  const container=document.getElementById("google-signin");
-  let attempts=0;
-  const timer=window.setInterval(()=>{
-   if(!(window as any).google||!container){attempts++;if(attempts>40)window.clearInterval(timer);return;}
-   window.clearInterval(timer);
-   const google=(window as any).google;
-   container.replaceChildren();
-   google.accounts.id.initialize({client_id:googleClientId,callback:(response:{credential:string})=>googleSignIn(response.credential),auto_select:false});
-   google.accounts.id.renderButton(container,{theme:"outline",size:"large",shape:"pill",text:mode==="signup"?"signup_with":"signin_with",width:320});
-  },100);
-  return()=>window.clearInterval(timer);
- },[googleClientId,mode,googlePledge]);
+ const [mode,setMode]=useState<"login"|"signup">(initialMode),[error,setError]=useState(""),[busy,setBusy]=useState(false);
  async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setError("");setBusy(true);const form=new FormData(e.currentTarget);
   try{const data=mode==="login"?await post<{user:User}>("/auth/login",{identity:form.get("identity"),password:form.get("password")}):await post<{user:User}>("/auth/signup",{username:form.get("username"),email:form.get("email"),password:form.get("password"),pledge:form.get("pledge")==="on"});onAuth(data.user);}
   catch(err){setError((err as Error).message)}finally{setBusy(false)}}
  return <div className="auth-screen"><div className="auth-art"><div className="auth-grid"></div><Link to="/" className="brand auth-brand"><span className="brand-mark"><Shield size={21}/></span><span>whitehat<span className="brand-light">dojo</span><small>SECURITY ACADEMY</small></span></Link><div className="art-content"><div className="pill"><span className="live-dot"></span> YOUR SAFE PLACE TO LEARN</div><h1>Break things.<br/><span>Learn safely.</span></h1><p>Build real-world security skills in a controlled, ethical environment designed for curious minds.</p><div className="auth-metrics"><div><b>12</b><span>guided lessons</span></div><div><b>11</b><span>safe labs</span></div><div><b>∞</b><span>room to grow</span></div></div></div><div className="auth-foot">✳ &nbsp;Ethical hacking starts with permission.</div></div><div className="auth-form-side"><div className="auth-form-wrap"><div className="auth-mobile-brand"><Shield/> whitehatdojo</div><span className="form-kicker">{mode==="login"?"WELCOME BACK":"START YOUR JOURNEY"}</span><h2>{mode==="login"?"Sign in to your dojo":"Create your account"}</h2><p className="muted">{mode==="login"?"Pick up where you left off. Your next challenge awaits.":"A safer internet starts with people like you."}</p>
   <div className="auth-tabs"><button className={mode==="login"?"selected":""} onClick={()=>setMode("login")}>Sign in</button><button className={mode==="signup"?"selected":""} onClick={()=>setMode("signup")}>Create account</button></div>
-  {googleClientId&&<div className="google-auth-block">
-   {mode=== "login"&&<label className="pledge google-pledge"><input type="checkbox" checked={googlePledge} onChange={e=>setGooglePledge(e.target.checked)}/><span>I will only test systems I own or have written permission to test. Required for first-time Google sign-in.</span></label>}
-   {mode=== "signup"&&<label className="pledge google-pledge"><input type="checkbox" checked={googlePledge} onChange={e=>setGooglePledge(e.target.checked)}/><span>I will only test systems I own or have written permission to test.</span></label>}
-   <div id="google-signin" aria-label="Continue with Google"/><div className="auth-divider"><span>or use your email</span></div>
-  </div>}
   <form onSubmit={submit} className="stack-form">{mode==="signup"&&<><label>Username<input name="username" required minLength={3} maxLength={24} autoComplete="username" placeholder="e.g. packetpanda"/></label><label>Email address<input type="email" name="email" required autoComplete="email" placeholder="you@example.com"/></label></>}
    {mode==="login"&&<label>Username or email<input name="identity" required autoComplete="username" placeholder="you@example.com"/></label>}
    <label>Password{mode==="login"&&<Link className="text-link password-forgot" to="/forgot">Forgot password?</Link>}<input type="password" name="password" minLength={mode==="signup"?10:1} required autoComplete={mode==="login"?"current-password":"new-password"} placeholder={mode==="signup"?"At least 10 characters":"Enter your password"}/></label>

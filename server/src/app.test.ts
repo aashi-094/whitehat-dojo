@@ -34,6 +34,9 @@ describe("REST API",()=>{
   expect((await request.post("/api/auth/login").send({identity:"testlearner",password:"wrong-password"})).status).toBe(401);
   expect((await request.get("/api/profile").set("Cookie",cookie)).status).toBe(200);
  });
+ it("does not expose Google sign-in",async()=>{
+  expect((await request.post("/api/auth/google").send({credential:"unused",pledge:true})).status).toBe(404);
+ });
  it("verifies a flag server-side, awards points once, and populates leaderboard",async()=>{
   const wrong=await request.post("/api/labs/1/submit").set("Cookie",cookie).send({flag:"WD{wrong}"});
   expect(wrong.status).toBe(400);

@@ -7,18 +7,10 @@ fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 export const db = new Database(dbPath);
 db.pragma("foreign_keys = ON");
 db.pragma("journal_mode = WAL");
-const userTableExists=!!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'").get();
-if(userTableExists){
-  const hasGoogleSub=(db.prepare("PRAGMA table_info(users)").all() as Array<{name:string}>).some(column=>column.name==="google_sub");
-  if(!hasGoogleSub){
-    db.exec("ALTER TABLE users ADD COLUMN google_sub TEXT");
-    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL");
-  }
-}
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
  id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE, email TEXT NOT NULL UNIQUE,
- password_hash TEXT NOT NULL, google_sub TEXT UNIQUE, role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')),
+ password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('user','admin')),
  xp INTEGER NOT NULL DEFAULT 0, streak INTEGER NOT NULL DEFAULT 0, last_active TEXT,
  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, disabled INTEGER NOT NULL DEFAULT 0
 );

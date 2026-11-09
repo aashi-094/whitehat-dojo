@@ -23,9 +23,5 @@ services:
         value: ChangeMe123!
       - key: ADMIN_EMAIL
         value: admin@whitehatdojo.local
-      - key: GOOGLE_CLIENT_ID
-        value: 58916445909-kv3vsqjnp4el5r8h4elr21qga7delp3v.apps.googleusercontent.com
-      - key: VITE_GOOGLE_CLIENT_ID
-        value: 58916445909-kv3vsqjnp4el5r8h4elr21qga7delp3v.apps.googleusercontent.com
       - key: NODE_VERSION
         value: 22.16.0
